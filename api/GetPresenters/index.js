@@ -18,6 +18,7 @@ module.exports = async function (context, req) {
   const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
 
   // Get a reference to a container
+  const containerName = 'presenters';
   const containerClient = blobServiceClient.getContainerClient(containerName);
 
   // blob name
