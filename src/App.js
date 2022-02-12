@@ -26,12 +26,12 @@ function App() {
       <div className="person-wrapper">
         <div className="list-of-people">
           <div className="person">
-            <img className="person-image" src={guy} />
+            <img className="person-image" alt="person" src={guy} />
             <span className="person-name">Adam</span>
-            <img className="spotlight-image" src={spotlight} />
+            <img className="spotlight-image" alt="spotlight" src={spotlight} />
           </div>
           <div className="person">
-            <img className="person-image" src={guy} />
+            <img className="person-image" alt="person" src={guy} />
             <span className="person-name">Bailey</span>
           </div>
         </div>
