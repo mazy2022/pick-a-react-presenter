@@ -40,7 +40,7 @@ module.exports = async function (context, req) {
     };
   } catch (error) {
     context.res = {
-      status: 200,
+      status: 500,
       body: {
         error,
       },
