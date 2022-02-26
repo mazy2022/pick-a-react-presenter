@@ -15,26 +15,35 @@ async function streamToString(readableStream) {
 }
 
 module.exports = async function (context, req) {
-  const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
-
-  // Get a reference to a container
-  const containerName = 'presenters';
-  const containerClient = blobServiceClient.getContainerClient(containerName);
-
-  // blob name
-  const blobName = 'presenters.json';
-
-  // Get a block blob client
-  const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-  const downloadBlockBlobResponse = await blockBlobClient.download(0);
-
-  // parse blob contents into string
-  const presenters = await streamToString(downloadBlockBlobResponse.readableStreamBody);
-
-  context.res = {
-    status: 200,
-    body: {
-      presenters,
-    },
-  };
+  try {
+    const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
+  
+    // Get a reference to a container
+    const containerName = 'presenters';
+    const containerClient = blobServiceClient.getContainerClient(containerName);
+  
+    // blob name
+    const blobName = 'presenters.json';
+  
+    // Get a block blob client
+    const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+    const downloadBlockBlobResponse = await blockBlobClient.download(0);
+  
+    // parse blob contents into string
+    const presenters = await streamToString(downloadBlockBlobResponse.readableStreamBody);
+  
+    context.res = {
+      status: 200,
+      body: {
+        presenters,
+      },
+    };
+  } catch (error) {
+    context.res = {
+      status: 200,
+      body: {
+        error,
+      },
+    };
+  }
 }
