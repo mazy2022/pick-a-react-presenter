@@ -37,7 +37,7 @@ module.exports = async function (context, req) {
   
     // parse blob contents into string
     const presenters = await streamToString(downloadBlockBlobResponse.readableStreamBody);
-    const data = JSON.parse(presenters);
+    let data = JSON.parse(presenters);
     let remaining = data.filter(person => person.presentationStatus === PRESENTATION_STATUS.NOT_SELECTED);
     if (remaining.length === 0) {
         remaining = data.map(person => {
@@ -46,13 +46,16 @@ module.exports = async function (context, req) {
                 presentationStatus: PRESENTATION_STATUS.NOT_SELECTED,
             };
         });
+        data = remaining;
     }
 
     const assigned = data.find(person => person.presentationStatus === PRESENTATION_STATUS.ASSIGNED);
-    assigned.presentationStatus = PRESENTATION_STATUS.PRESENTED;
+    if (assigned) {
+      assigned.presentationStatus = PRESENTATION_STATUS.PRESENTED;
+    }
     const randomIndex = Math.floor(Math.random() * remaining.length);
     remaining[randomIndex].presentationStatus = PRESENTATION_STATUS.ASSIGNED;
-    
+
     const newList = JSON.stringify(data);
     
     // Upload data to the blob
