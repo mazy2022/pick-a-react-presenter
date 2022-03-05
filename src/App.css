@@ -61,3 +61,7 @@ body {
 .person .item {
   padding-top: 70px;
 }
+
+.presented {
+  filter: brightness(0.5);
+}
