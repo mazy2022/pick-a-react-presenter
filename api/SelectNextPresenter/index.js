@@ -14,6 +14,12 @@ async function streamToString(readableStream) {
   });
 }
 
+const PRESENTATION_STATUS = {
+    NOT_SELECTED: 0,
+    ASSIGNED: 10,
+    PRESENTED: 20,
+};
+
 module.exports = async function (context, req) {
   try {
     const blobServiceClient = BlobServiceClient.fromConnectionString(process.env.AZURE_STORAGE_CONNECTION_STRING);
@@ -31,18 +37,41 @@ module.exports = async function (context, req) {
   
     // parse blob contents into string
     const presenters = await streamToString(downloadBlockBlobResponse.readableStreamBody);
-  
+    const data = JSON.parse(presenters);
+    let remaining = data.filter(person => person.presentationStatus === PRESENTATION_STATUS.NOT_SELECTED);
+    if (remaining.length === 0) {
+        remaining = data.map(person => {
+            return {
+                ...person,
+                presentationStatus: PRESENTATION_STATUS.NOT_SELECTED,
+            };
+        });
+    }
+
+    const randomIndex = Math.floor(Math.random() * remaining.length);
+    remaining[randomIndex].presentationStatus = PRESENTATION_STATUS.ASSIGNED;
+
+    const presented = data.filter(person => person.presentationStatus !== PRESENTATION_STATUS.NOT_SELECTED);
+    const lastPresented = presented.find(person => person.presentationStatus === PRESENTATION_STATUS.ASSIGNED);
+    lastPresented.presentationStatus = PRESENTATION_STATUS.PRESENTED;
+    
+    const newList = JSON.stringify([...remaining, ...presented]);
+    
+    // Upload data to the blob
+    const uploadBlobResponse = await blockBlobClient.upload(newList, newList.length);
+    console.log("Blob was uploaded successfully. requestId: ", uploadBlobResponse.requestId);
+
     context.res = {
       status: 200,
       body: {
-        presenters: JSON.parse(presenters),
+        presenters: JSON.parse(newList),
       },
     };
   } catch (error) {
     context.res = {
       status: 500,
       body: {
-        error:JSON.stringify(error),
+        error: JSON.stringify(error),
       },
     };
   }
