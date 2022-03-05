@@ -64,14 +64,14 @@ module.exports = async function (context, req) {
     context.res = {
       status: 200,
       body: {
-        presenters: newList,
+        presenters: JSON.parse(newList),
       },
     };
   } catch (error) {
     context.res = {
       status: 500,
       body: {
-        error,
+        error: JSON.stringify(error),
       },
     };
   }
