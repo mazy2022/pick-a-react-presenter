@@ -15,7 +15,7 @@ function App() {
   useEffect(() => {
     fetch('api/GetPresenters')
       .then(res => {
-        setPresenters(res.data.presenters);
+        setPresenters(res.body.presenters);
       })
       .catch(err => {
         console.log(err);
@@ -25,7 +25,7 @@ function App() {
   const selectPresenter = () => {
     fetch('api/SelectPresenter')
       .then(res => {
-        setPresenters(res.data.presenters);
+        setPresenters(res.body.presenters);
       })
       .catch(err => {
         console.log(err);
