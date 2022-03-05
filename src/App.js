@@ -14,8 +14,9 @@ function App() {
   const [presenters, setPresenters] = useState([]);
   useEffect(() => {
     fetch('api/GetPresenters')
-      .then(res => {
-        setPresenters(JSON.parse(res.body).presenters);
+      .then(res => res.json())
+      .then(body => {
+        setPresenters(body.presenters);
       })
       .catch(err => {
         console.log(err);
@@ -24,8 +25,9 @@ function App() {
 
   const selectPresenter = () => {
     fetch('api/SelectPresenter')
-      .then(res => {
-        setPresenters(JSON.parse(res.body).presenters);
+      .then(res => res.json())
+      .then(body => {
+        setPresenters(body.presenters);
       })
       .catch(err => {
         console.log(err);
