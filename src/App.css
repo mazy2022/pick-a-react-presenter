@@ -16,6 +16,17 @@ body {
   min-width: 600px;
   text-align: center;
 }
+.header {
+  color: white;
+}
+.pick-button {
+  color: white;
+  background: blue;
+  padding: 10px 15px;
+  box-shadow: none;
+  border: none;
+  border-radius: 15px;
+}
 .presenter-list {
   display: flex;
   flex-wrap: wrap;
