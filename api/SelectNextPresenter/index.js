@@ -48,14 +48,12 @@ module.exports = async function (context, req) {
         });
     }
 
+    const assigned = data.find(person => person.presentationStatus === PRESENTATION_STATUS.ASSIGNED);
+    assigned.presentationStatus = PRESENTATION_STATUS.PRESENTED;
     const randomIndex = Math.floor(Math.random() * remaining.length);
     remaining[randomIndex].presentationStatus = PRESENTATION_STATUS.ASSIGNED;
-
-    const presented = data.filter(person => person.presentationStatus !== PRESENTATION_STATUS.NOT_SELECTED);
-    const lastPresented = presented.find(person => person.presentationStatus === PRESENTATION_STATUS.ASSIGNED);
-    lastPresented.presentationStatus = PRESENTATION_STATUS.PRESENTED;
     
-    const newList = JSON.stringify([...remaining, ...presented]);
+    const newList = JSON.stringify(data);
     
     // Upload data to the blob
     const uploadBlobResponse = await blockBlobClient.upload(newList, newList.length);
