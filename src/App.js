@@ -24,7 +24,7 @@ function App() {
   }, []);
 
   const selectPresenter = () => {
-    fetch('api/SelectPresenter')
+    fetch('api/SelectNextPresenter')
       .then(res => res.json())
       .then(body => {
         setPresenters(body.presenters);
