@@ -271,7 +271,7 @@
   - Add end-to-end tests for critical user journeys
   - _Requirements: All requirements_
 
-- [ ] 8.1 Write unit tests for backend functions
+- [x] 8.1 Write unit tests for backend functions
 
   - Test AddPresenter, RemovePresenter, and ResetPresenters functions
   - Add tests for validation logic and error scenarios

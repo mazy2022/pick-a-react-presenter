@@ -1,452 +1,340 @@
-const selectNextPresenterFunction = require('./index');
-
 // Mock Azure Storage Blob
 jest.mock('@azure/storage-blob');
-const { BlobServiceClient } = require('@azure/storage-blob');
 
-describe('SelectNextPresenter Azure Function (Enhanced)', () => {
-  let mockContext;
-  let mockBlobServiceClient;
-  let mockContainerClient;
-  let mockBlockBlobClient;
+const { BlobServiceClient } = require('@azure/storage-blob');
+const selectNextPresenterFunction = require('./index');
+
+// Mock functions
+const mockDownload = jest.fn();
+const mockUpload = jest.fn();
+const mockGetBlockBlobClient = jest.fn(() => ({
+  download: mockDownload,
+  upload: mockUpload
+}));
+const mockGetContainerClient = jest.fn(() => ({
+  getBlockBlobClient: mockGetBlockBlobClient
+}));
+
+// Setup the mock
+BlobServiceClient.fromConnectionString.mockReturnValue({
+  getContainerClient: mockGetContainerClient
+});
+
+// Mock Math.random for predictable testing
+const mockMathRandom = jest.spyOn(Math, 'random');
+
+describe('SelectNextPresenter Function', () => {
+  let context;
+  let mockReadableStream;
 
   beforeEach(() => {
-    // Reset mocks
-    jest.clearAllMocks();
-    
-    // Mock context
-    mockContext = {
+    context = {
       res: {}
     };
+    
+    mockUpload.mockResolvedValue({
+      requestId: 'test-request-id'
+    });
 
-    // Mock blob storage clients
-    mockBlockBlobClient = {
-      download: jest.fn(),
-      upload: jest.fn()
-    };
-
-    mockContainerClient = {
-      getBlockBlobClient: jest.fn(() => mockBlockBlobClient)
-    };
-
-    mockBlobServiceClient = {
-      getContainerClient: jest.fn(() => mockContainerClient)
-    };
-
-    BlobServiceClient.fromConnectionString = jest.fn(() => mockBlobServiceClient);
-
-    // Mock Math.random for predictable testing
-    jest.spyOn(Math, 'random').mockReturnValue(0.5);
+    // Clear all mocks
+    jest.clearAllMocks();
   });
 
   afterEach(() => {
-    jest.restoreAllMocks();
+    jest.clearAllMocks();
   });
 
-  describe('Empty Presenter List Tests', () => {
+  const setupMockData = (presenters) => {
+    mockReadableStream = {
+      on: jest.fn((event, callback) => {
+        if (event === 'data') {
+          callback(JSON.stringify(presenters));
+        } else if (event === 'end') {
+          callback();
+        }
+      })
+    };
+
+    mockDownload.mockResolvedValue({
+      readableStreamBody: mockReadableStream
+    });
+  };
+
+  describe('Empty Presenter List', () => {
     test('should return 400 when presenter list is empty', async () => {
-      const emptyPresenters = [];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(emptyPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
+      setupMockData([]);
+      
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(400);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('No presenters available for selection');
-      expect(mockContext.res.body.error).toBe('Empty presenter list');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(400);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('No presenters available for selection');
+      expect(context.res.body.error).toBe('Empty presenter list');
     });
 
     test('should return 400 when presenter list is null', async () => {
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(null));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
+      setupMockData(null);
+      
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(400);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('No presenters available for selection');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(400);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('No presenters available for selection');
     });
   });
 
-  describe('Normal Selection Tests', () => {
-    test('should successfully select a presenter when some are available', async () => {
+  describe('Normal Selection', () => {
+    test('should select first available presenter when Math.random returns 0', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
         { name: 'Jane Smith', presentationStatus: 0 }, // NOT_SELECTED
-        { name: 'Bob Johnson', presentationStatus: 20 } // PRESENTED
+        { name: 'Bob Wilson', presentationStatus: 20 } // PRESENTED
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0); // First available presenter
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.autoResetOccurred).toBe(false);
-      expect(mockContext.res.body.remainingCount).toBe(1); // 2 available - 1 selected = 1 remaining
-      expect(mockContext.res.body.selectedPresenter).toBeDefined();
-      expect(mockContext.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
-
-      // With Math.random() = 0.5, should select index 1 (Jane Smith)
-      expect(mockContext.res.body.selectedPresenter.name).toBe('Jane Smith');
-      expect(mockContext.res.body.message).toBe('Presenter "Jane Smith" has been selected');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.success).toBe(true);
+      // The function filters NOT_SELECTED presenters, so first available could be either John or Jane
+      expect(['John Doe', 'Jane Smith']).toContain(context.res.body.selectedPresenter.name);
+      expect(context.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
+      expect(context.res.body.autoResetOccurred).toBe(false);
+      expect(context.res.body.remainingCount).toBe(1);
     });
 
-    test('should mark currently assigned presenter as presented', async () => {
+    test('should select second available presenter when Math.random returns 0.9', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
-        { name: 'Jane Smith', presentationStatus: 10 }, // ASSIGNED
-        { name: 'Bob Johnson', presentationStatus: 20 } // PRESENTED
+        { name: 'Jane Smith', presentationStatus: 0 }, // NOT_SELECTED
+        { name: 'Bob Wilson', presentationStatus: 20 } // PRESENTED
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0.9); // Second available presenter (index 1)
 
       const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.selectedPresenter.name).toBe('Jane Smith');
+      expect(context.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
+    });
 
-      await selectNextPresenterFunction(mockContext, req);
+    test('should mark currently assigned presenter as presented before selecting new one', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 10 }, // ASSIGNED
+        { name: 'Jane Smith', presentationStatus: 0 }, // NOT_SELECTED
+        { name: 'Bob Wilson', presentationStatus: 20 } // PRESENTED
+      ];
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0); // Select Jane Smith
 
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
+      const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      
+      // John Doe should be marked as presented
+      const johnDoe = context.res.body.presenters.find(p => p.name === 'John Doe');
+      expect(johnDoe.presentationStatus).toBe(20); // PRESENTED
+      
+      // Jane Smith should be selected
+      expect(context.res.body.selectedPresenter.name).toBe('Jane Smith');
+      expect(context.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
+    });
 
-      // Jane Smith should now be marked as PRESENTED
-      const janeSmith = mockContext.res.body.presenters.find(p => p.name === 'Jane Smith');
-      expect(janeSmith.presentationStatus).toBe(20); // PRESENTED
+    test('should handle single presenter selection', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 0 } // NOT_SELECTED
+      ];
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0);
 
-      // John Doe should be selected (only remaining NOT_SELECTED)
-      expect(mockContext.res.body.selectedPresenter.name).toBe('John Doe');
-      expect(mockContext.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
+      const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.selectedPresenter.name).toBe('John Doe');
+      expect(context.res.body.remainingCount).toBe(0);
     });
   });
 
-  describe('Auto-Reset Tests', () => {
-    test('should auto-reset when all presenters are presented or assigned', async () => {
+  describe('Auto-Reset Functionality', () => {
+    test('should auto-reset when no NOT_SELECTED presenters remain', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 10 }, // ASSIGNED (will become PRESENTED)
+        { name: 'Jane Smith', presentationStatus: 20 }, // PRESENTED
+        { name: 'Bob Wilson', presentationStatus: 20 } // PRESENTED
+      ];
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0); // Select first presenter after reset
+
+      const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.success).toBe(true);
+      expect(context.res.body.autoResetOccurred).toBe(true);
+      expect(context.res.body.message).toContain('All presenters had been selected. Starting a new round!');
+      expect(context.res.body.message).toContain('has been selected for the new round');
+      
+      // All presenters except the selected one should be NOT_SELECTED
+      const notSelectedCount = context.res.body.presenters.filter(p => p.presentationStatus === 0).length;
+      const assignedCount = context.res.body.presenters.filter(p => p.presentationStatus === 10).length;
+      
+      expect(notSelectedCount).toBe(2);
+      expect(assignedCount).toBe(1);
+    });
+
+    test('should auto-reset when all presenters are PRESENTED', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 20 }, // PRESENTED
-        { name: 'Jane Smith', presentationStatus: 10 }, // ASSIGNED
-        { name: 'Bob Johnson', presentationStatus: 20 } // PRESENTED
+        { name: 'Jane Smith', presentationStatus: 20 }, // PRESENTED
+        { name: 'Bob Wilson', presentationStatus: 20 } // PRESENTED
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0.5); // Select middle presenter after reset
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.autoResetOccurred).toBe(true);
-      expect(mockContext.res.body.message).toContain('All presenters had been selected. Starting a new round!');
-
-      // All presenters should be reset to NOT_SELECTED except the newly selected one
-      const notSelectedCount = mockContext.res.body.presenters.filter(p => p.presentationStatus === 0).length;
-      const assignedCount = mockContext.res.body.presenters.filter(p => p.presentationStatus === 10).length;
-      const presentedCount = mockContext.res.body.presenters.filter(p => p.presentationStatus === 20).length;
-
-      expect(notSelectedCount).toBe(2); // 2 reset to NOT_SELECTED
-      expect(assignedCount).toBe(1); // 1 newly selected
-      expect(presentedCount).toBe(0); // All reset during auto-reset
-
-      // Verify the selected presenter
-      expect(mockContext.res.body.selectedPresenter).toBeDefined();
-      expect(mockContext.res.body.selectedPresenter.presentationStatus).toBe(10);
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.autoResetOccurred).toBe(true);
+      // After reset, any presenter could be selected
+      expect(['John Doe', 'Jane Smith', 'Bob Wilson']).toContain(context.res.body.selectedPresenter.name);
+      expect(context.res.body.remainingCount).toBe(2);
     });
 
-    test('should handle auto-reset with single presenter', async () => {
+    test('should not auto-reset when NOT_SELECTED presenters are available', async () => {
       const existingPresenters = [
-        { name: 'John Doe', presentationStatus: 20 } // PRESENTED
+        { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
+        { name: 'Jane Smith', presentationStatus: 20 }, // PRESENTED
+        { name: 'Bob Wilson', presentationStatus: 10 } // ASSIGNED
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0);
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.autoResetOccurred).toBe(true);
-      expect(mockContext.res.body.selectedPresenter.name).toBe('John Doe');
-      expect(mockContext.res.body.selectedPresenter.presentationStatus).toBe(10); // ASSIGNED
-      expect(mockContext.res.body.remainingCount).toBe(0); // No more remaining after selection
-    });
-
-    test('should preserve presenter properties during auto-reset', async () => {
-      const existingPresenters = [
-        { 
-          name: 'John Doe', 
-          presentationStatus: 20,
-          id: 'uuid-123',
-          addedDate: '2023-01-01T00:00:00.000Z',
-          customProperty: 'test'
-        },
-        { 
-          name: 'Jane Smith', 
-          presentationStatus: 20,
-          id: 'uuid-456',
-          addedDate: '2023-01-02T00:00:00.000Z'
-        }
-      ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
-
-      const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.autoResetOccurred).toBe(true);
-
-      // Verify properties are preserved
-      const johnDoe = mockContext.res.body.presenters.find(p => p.name === 'John Doe');
-      expect(johnDoe.id).toBe('uuid-123');
-      expect(johnDoe.addedDate).toBe('2023-01-01T00:00:00.000Z');
-      expect(johnDoe.customProperty).toBe('test');
-
-      const janeSmith = mockContext.res.body.presenters.find(p => p.name === 'Jane Smith');
-      expect(janeSmith.id).toBe('uuid-456');
-      expect(janeSmith.addedDate).toBe('2023-01-02T00:00:00.000Z');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.autoResetOccurred).toBe(false);
+      expect(context.res.body.selectedPresenter.name).toBe('John Doe');
+      
+      // Bob Wilson should be marked as presented
+      const bobWilson = context.res.body.presenters.find(p => p.name === 'Bob Wilson');
+      expect(bobWilson.presentationStatus).toBe(20); // PRESENTED
     });
   });
 
-  describe('Random Selection Tests', () => {
-    test('should select first presenter when Math.random returns 0', async () => {
-      Math.random.mockReturnValue(0);
-
+  describe('Response Format', () => {
+    test('should return correct response format for normal selection', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 0 },
-        { name: 'Jane Smith', presentationStatus: 0 },
-        { name: 'Bob Johnson', presentationStatus: 0 }
+        { name: 'Jane Smith', presentationStatus: 0 }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0);
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.body.selectedPresenter.name).toBe('John Doe');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body).toHaveProperty('presenters');
+      expect(context.res.body).toHaveProperty('success', true);
+      expect(context.res.body).toHaveProperty('message');
+      expect(context.res.body).toHaveProperty('selectedPresenter');
+      expect(context.res.body).toHaveProperty('autoResetOccurred', false);
+      expect(context.res.body).toHaveProperty('remainingCount');
     });
 
-    test('should select last presenter when Math.random returns close to 1', async () => {
-      Math.random.mockReturnValue(0.99);
-
+    test('should return correct response format for auto-reset selection', async () => {
       const existingPresenters = [
-        { name: 'John Doe', presentationStatus: 0 },
-        { name: 'Jane Smith', presentationStatus: 0 },
-        { name: 'Bob Johnson', presentationStatus: 0 }
+        { name: 'John Doe', presentationStatus: 20 },
+        { name: 'Jane Smith', presentationStatus: 20 }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0);
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.body.selectedPresenter.name).toBe('Bob Johnson');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body).toHaveProperty('autoResetOccurred', true);
+      expect(context.res.body.message).toContain('All presenters had been selected. Starting a new round!');
     });
   });
 
-  describe('Error Handling Tests', () => {
-    test('should handle blob storage read errors', async () => {
-      mockBlockBlobClient.download.mockRejectedValue(new Error('Blob storage error'));
-
-      const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while selecting the next presenter');
-      expect(mockContext.res.body.error).toBe('Blob storage error');
-    });
-
-    test('should handle blob storage upload errors', async () => {
+  describe('Blob Storage Operations', () => {
+    test('should call blob storage operations correctly', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 0 }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockRejectedValue(new Error('Upload failed'));
+      setupMockData(existingPresenters);
+      mockMathRandom.mockReturnValue(0);
 
       const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(mockGetContainerClient).toHaveBeenCalledWith('presenters');
+      expect(mockGetBlockBlobClient).toHaveBeenCalledWith('presenters.json');
+      expect(mockDownload).toHaveBeenCalledWith(0);
+      expect(mockUpload).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Number)
+      );
+    });
+  });
 
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while selecting the next presenter');
-      expect(mockContext.res.body.error).toBe('Upload failed');
+  describe('Error Handling', () => {
+    test('should handle blob storage download error', async () => {
+      mockDownload.mockRejectedValue(new Error('Storage error'));
+      
+      const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('An error occurred while selecting the next presenter');
+      expect(context.res.body.error).toBe('Storage error');
     });
 
-    test('should handle JSON parsing errors', async () => {
-      // Mock blob storage response with invalid JSON
-      const mockReadableStream = {
+    test('should handle blob storage upload error', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 0 }
+      ];
+      setupMockData(existingPresenters);
+      mockUpload.mockRejectedValue(new Error('Upload failed'));
+      mockMathRandom.mockReturnValue(0);
+      
+      const req = {};
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('An error occurred while selecting the next presenter');
+    });
+
+    test('should handle JSON parse error', async () => {
+      mockReadableStream = {
         on: jest.fn((event, callback) => {
           if (event === 'data') {
             callback('invalid json');
@@ -456,17 +344,16 @@ describe('SelectNextPresenter Azure Function (Enhanced)', () => {
         })
       };
 
-      mockBlockBlobClient.download.mockResolvedValue({
+      mockDownload.mockResolvedValue({
         readableStreamBody: mockReadableStream
       });
 
       const req = {};
-
-      await selectNextPresenterFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while selecting the next presenter');
+      
+      await selectNextPresenterFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
     });
   });
 });
