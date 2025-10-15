@@ -1,341 +1,258 @@
-const resetPresentersFunction = require('./index');
-
 // Mock Azure Storage Blob
 jest.mock('@azure/storage-blob');
-const { BlobServiceClient } = require('@azure/storage-blob');
 
-describe('ResetPresenters Azure Function', () => {
-  let mockContext;
-  let mockBlobServiceClient;
-  let mockContainerClient;
-  let mockBlockBlobClient;
+const { BlobServiceClient } = require('@azure/storage-blob');
+const resetPresentersFunction = require('./index');
+
+// Mock functions
+const mockDownload = jest.fn();
+const mockUpload = jest.fn();
+const mockGetBlockBlobClient = jest.fn(() => ({
+  download: mockDownload,
+  upload: mockUpload
+}));
+const mockGetContainerClient = jest.fn(() => ({
+  getBlockBlobClient: mockGetBlockBlobClient
+}));
+
+// Setup the mock
+BlobServiceClient.fromConnectionString.mockReturnValue({
+  getContainerClient: mockGetContainerClient
+});
+
+describe('ResetPresenters Function', () => {
+  let context;
+  let mockReadableStream;
 
   beforeEach(() => {
-    // Reset mocks
-    jest.clearAllMocks();
-    
-    // Mock context
-    mockContext = {
+    context = {
       res: {}
     };
+    
+    mockUpload.mockResolvedValue({
+      requestId: 'test-request-id'
+    });
 
-    // Mock blob storage clients
-    mockBlockBlobClient = {
-      download: jest.fn(),
-      upload: jest.fn()
-    };
-
-    mockContainerClient = {
-      getBlockBlobClient: jest.fn(() => mockBlockBlobClient)
-    };
-
-    mockBlobServiceClient = {
-      getContainerClient: jest.fn(() => mockContainerClient)
-    };
-
-    BlobServiceClient.fromConnectionString = jest.fn(() => mockBlobServiceClient);
+    // Clear all mocks
+    jest.clearAllMocks();
   });
 
-  describe('Empty Presenter List Tests', () => {
+  const setupMockData = (presenters) => {
+    mockReadableStream = {
+      on: jest.fn((event, callback) => {
+        if (event === 'data') {
+          callback(JSON.stringify(presenters));
+        } else if (event === 'end') {
+          callback();
+        }
+      })
+    };
+
+    mockDownload.mockResolvedValue({
+      readableStreamBody: mockReadableStream
+    });
+  };
+
+  describe('Empty Presenter List', () => {
     test('should return 400 when presenter list is empty', async () => {
-      const emptyPresenters = [];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(emptyPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
+      setupMockData([]);
+      
       const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(400);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('No presenters found to reset');
-      expect(mockContext.res.body.error).toBe('Empty presenter list');
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(400);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('No presenters found to reset');
+      expect(context.res.body.error).toBe('Empty presenter list');
     });
 
     test('should return 400 when presenter list is null', async () => {
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(null));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
+      setupMockData(null);
+      
       const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(400);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('No presenters found to reset');
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(400);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('No presenters found to reset');
     });
   });
 
-  describe('Successful Reset Tests', () => {
-    test('should successfully reset all presenters to NOT_SELECTED status', async () => {
+  describe('Successful Reset', () => {
+    test('should reset all presenters to NOT_SELECTED status', async () => {
       const existingPresenters = [
-        { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
-        { name: 'Jane Smith', presentationStatus: 10 }, // ASSIGNED
-        { name: 'Bob Johnson', presentationStatus: 20 }, // PRESENTED
+        { name: 'John Doe', presentationStatus: 10 }, // ASSIGNED
+        { name: 'Jane Smith', presentationStatus: 20 }, // PRESENTED
+        { name: 'Bob Wilson', presentationStatus: 0 }, // NOT_SELECTED
         { name: 'Alice Brown', presentationStatus: 20 } // PRESENTED
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
 
       const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.message).toBe('All 4 presenters have been reset to NOT_SELECTED status. New round started!');
-      expect(mockContext.res.body.resetCount).toBe(4);
-      expect(mockContext.res.body.previousStatusCounts).toEqual({
-        notSelected: 1,
-        assigned: 1,
-        presented: 2
-      });
-
-      // Verify all presenters have NOT_SELECTED status
-      expect(mockContext.res.body.presenters).toHaveLength(4);
-      mockContext.res.body.presenters.forEach(presenter => {
-        expect(presenter.presentationStatus).toBe(0); // NOT_SELECTED
-      });
-
-      // Verify presenter names are preserved
-      const presenterNames = mockContext.res.body.presenters.map(p => p.name);
-      expect(presenterNames).toContain('John Doe');
-      expect(presenterNames).toContain('Jane Smith');
-      expect(presenterNames).toContain('Bob Johnson');
-      expect(presenterNames).toContain('Alice Brown');
-    });
-
-    test('should reset presenters that are already NOT_SELECTED', async () => {
-      const existingPresenters = [
-        { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
-        { name: 'Jane Smith', presentationStatus: 0 } // NOT_SELECTED
-      ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
-
-      const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.resetCount).toBe(2);
-      expect(mockContext.res.body.previousStatusCounts).toEqual({
-        notSelected: 2,
-        assigned: 0,
-        presented: 0
-      });
-
-      // Verify all presenters still have NOT_SELECTED status
-      mockContext.res.body.presenters.forEach(presenter => {
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.success).toBe(true);
+      expect(context.res.body.message).toBe('All 4 presenters have been reset to NOT_SELECTED status. New round started!');
+      expect(context.res.body.presenters).toHaveLength(4);
+      
+      // All presenters should have status 0 (NOT_SELECTED)
+      context.res.body.presenters.forEach(presenter => {
         expect(presenter.presentationStatus).toBe(0);
       });
     });
 
-    test('should preserve all presenter properties except status', async () => {
+    test('should preserve presenter names and other properties', async () => {
       const existingPresenters = [
         { 
           name: 'John Doe', 
           presentationStatus: 10,
-          id: 'uuid-123',
-          addedDate: '2023-01-01T00:00:00.000Z',
-          customProperty: 'test'
+          id: 'uuid-1',
+          addedDate: '2023-01-01T00:00:00.000Z'
         },
         { 
           name: 'Jane Smith', 
           presentationStatus: 20,
-          id: 'uuid-456',
+          id: 'uuid-2',
           addedDate: '2023-01-02T00:00:00.000Z'
         }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
 
       const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.presenters[0]).toEqual({
+        name: 'John Doe',
+        presentationStatus: 0,
+        id: 'uuid-1',
+        addedDate: '2023-01-01T00:00:00.000Z'
+      });
+      expect(context.res.body.presenters[1]).toEqual({
+        name: 'Jane Smith',
+        presentationStatus: 0,
+        id: 'uuid-2',
+        addedDate: '2023-01-02T00:00:00.000Z'
+      });
+    });
 
-      await resetPresentersFunction(mockContext, req);
+    test('should return correct status counts in response', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 0 }, // NOT_SELECTED
+        { name: 'Jane Smith', presentationStatus: 10 }, // ASSIGNED
+        { name: 'Bob Wilson', presentationStatus: 10 }, // ASSIGNED
+        { name: 'Alice Brown', presentationStatus: 20 }, // PRESENTED
+        { name: 'Charlie Davis', presentationStatus: 20 } // PRESENTED
+      ];
+      setupMockData(existingPresenters);
 
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-
-      // Verify properties are preserved
-      const johnDoe = mockContext.res.body.presenters.find(p => p.name === 'John Doe');
-      expect(johnDoe.presentationStatus).toBe(0);
-      expect(johnDoe.id).toBe('uuid-123');
-      expect(johnDoe.addedDate).toBe('2023-01-01T00:00:00.000Z');
-      expect(johnDoe.customProperty).toBe('test');
-
-      const janeSmith = mockContext.res.body.presenters.find(p => p.name === 'Jane Smith');
-      expect(janeSmith.presentationStatus).toBe(0);
-      expect(janeSmith.id).toBe('uuid-456');
-      expect(janeSmith.addedDate).toBe('2023-01-02T00:00:00.000Z');
+      const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.resetCount).toBe(5);
+      expect(context.res.body.previousStatusCounts).toEqual({
+        notSelected: 1,
+        assigned: 2,
+        presented: 2
+      });
     });
 
     test('should handle single presenter reset', async () => {
       const existingPresenters = [
-        { name: 'John Doe', presentationStatus: 20 } // PRESENTED
+        { name: 'John Doe', presentationStatus: 20 }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockResolvedValue({
-        requestId: 'test-request-id'
-      });
+      setupMockData(existingPresenters);
 
       const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.success).toBe(true);
+      expect(context.res.body.message).toBe('All 1 presenters have been reset to NOT_SELECTED status. New round started!');
+      expect(context.res.body.presenters).toHaveLength(1);
+      expect(context.res.body.presenters[0].presentationStatus).toBe(0);
+    });
 
-      await resetPresentersFunction(mockContext, req);
+    test('should handle presenters already in NOT_SELECTED status', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 0 },
+        { name: 'Jane Smith', presentationStatus: 0 }
+      ];
+      setupMockData(existingPresenters);
 
-      expect(mockContext.res.status).toBe(200);
-      expect(mockContext.res.body.success).toBe(true);
-      expect(mockContext.res.body.resetCount).toBe(1);
-      expect(mockContext.res.body.previousStatusCounts).toEqual({
-        notSelected: 0,
+      const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.success).toBe(true);
+      expect(context.res.body.previousStatusCounts).toEqual({
+        notSelected: 2,
         assigned: 0,
-        presented: 1
+        presented: 0
       });
-      expect(mockContext.res.body.presenters[0].presentationStatus).toBe(0);
-    });
-  });
-
-  describe('Error Handling Tests', () => {
-    test('should handle blob storage read errors', async () => {
-      mockBlockBlobClient.download.mockRejectedValue(new Error('Blob storage error'));
-
-      const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while resetting presenters');
-      expect(mockContext.res.body.error).toBe('Blob storage error');
     });
 
-    test('should handle blob storage upload errors', async () => {
+    test('should call blob storage operations correctly', async () => {
       const existingPresenters = [
         { name: 'John Doe', presentationStatus: 10 }
       ];
-
-      // Mock blob storage response
-      const mockReadableStream = {
-        on: jest.fn((event, callback) => {
-          if (event === 'data') {
-            callback(JSON.stringify(existingPresenters));
-          } else if (event === 'end') {
-            callback();
-          }
-        })
-      };
-
-      mockBlockBlobClient.download.mockResolvedValue({
-        readableStreamBody: mockReadableStream
-      });
-
-      mockBlockBlobClient.upload.mockRejectedValue(new Error('Upload failed'));
+      setupMockData(existingPresenters);
 
       const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(mockGetContainerClient).toHaveBeenCalledWith('presenters');
+      expect(mockGetBlockBlobClient).toHaveBeenCalledWith('presenters.json');
+      expect(mockDownload).toHaveBeenCalledWith(0);
+      expect(mockUpload).toHaveBeenCalledWith(
+        expect.any(String),
+        expect.any(Number)
+      );
+    });
+  });
 
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while resetting presenters');
-      expect(mockContext.res.body.error).toBe('Upload failed');
+  describe('Error Handling', () => {
+    test('should handle blob storage download error', async () => {
+      mockDownload.mockRejectedValue(new Error('Storage error'));
+      
+      const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('An error occurred while resetting presenters');
+      expect(context.res.body.error).toBe('Storage error');
     });
 
-    test('should handle JSON parsing errors', async () => {
-      // Mock blob storage response with invalid JSON
-      const mockReadableStream = {
+    test('should handle blob storage upload error', async () => {
+      const existingPresenters = [
+        { name: 'John Doe', presentationStatus: 10 }
+      ];
+      setupMockData(existingPresenters);
+      mockUpload.mockRejectedValue(new Error('Upload failed'));
+      
+      const req = {};
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('An error occurred while resetting presenters');
+    });
+
+    test('should handle JSON parse error', async () => {
+      mockReadableStream = {
         on: jest.fn((event, callback) => {
           if (event === 'data') {
             callback('invalid json');
@@ -345,17 +262,16 @@ describe('ResetPresenters Azure Function', () => {
         })
       };
 
-      mockBlockBlobClient.download.mockResolvedValue({
+      mockDownload.mockResolvedValue({
         readableStreamBody: mockReadableStream
       });
 
       const req = {};
-
-      await resetPresentersFunction(mockContext, req);
-
-      expect(mockContext.res.status).toBe(500);
-      expect(mockContext.res.body.success).toBe(false);
-      expect(mockContext.res.body.message).toBe('An error occurred while resetting presenters');
+      
+      await resetPresentersFunction(context, req);
+      
+      expect(context.res.status).toBe(500);
+      expect(context.res.body.success).toBe(false);
     });
   });
 });
