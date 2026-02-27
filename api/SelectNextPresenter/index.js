@@ -36,44 +36,93 @@ module.exports = async function (context, req) {
     const downloadBlockBlobResponse = await blockBlobClient.download(0);
   
     // parse blob contents into string
-    const presenters = await streamToString(downloadBlockBlobResponse.readableStreamBody);
-    let data = JSON.parse(presenters);
-    let remaining = data.filter(person => person.presentationStatus === PRESENTATION_STATUS.NOT_SELECTED);
-    if (remaining.length === 0) {
-        remaining = data.map(person => {
-            return {
-                ...person,
-                presentationStatus: PRESENTATION_STATUS.NOT_SELECTED,
-            };
-        });
-        data = remaining;
+    const presentersData = await streamToString(downloadBlockBlobResponse.readableStreamBody);
+    let data = JSON.parse(presentersData);
+
+    // Check if there are any presenters
+    if (!data || data.length === 0) {
+      context.res = {
+        status: 400,
+        body: {
+          success: false,
+          message: 'No presenters available for selection',
+          error: 'Empty presenter list'
+        }
+      };
+      return;
     }
 
+    // Track if auto-reset occurred
+    let autoResetOccurred = false;
+    let resetMessage = '';
+
+    // Mark currently assigned presenter as presented first
     const assigned = data.find(person => person.presentationStatus === PRESENTATION_STATUS.ASSIGNED);
     if (assigned) {
       assigned.presentationStatus = PRESENTATION_STATUS.PRESENTED;
+      console.log(`Marked presenter "${assigned.name}" as presented`);
     }
-    const randomIndex = Math.floor(Math.random() * remaining.length);
-    remaining[randomIndex].presentationStatus = PRESENTATION_STATUS.ASSIGNED;
 
-    const newList = JSON.stringify(data);
+    // Get remaining presenters (NOT_SELECTED)
+    let remaining = data.filter(person => person.presentationStatus === PRESENTATION_STATUS.NOT_SELECTED);
     
-    // Upload data to the blob
-    const uploadBlobResponse = await blockBlobClient.upload(newList, newList.length);
-    console.log("Blob was uploaded successfully. requestId: ", uploadBlobResponse.requestId);
+    // Auto-reset logic: if no presenters are available, reset all to NOT_SELECTED
+    if (remaining.length === 0) {
+      autoResetOccurred = true;
+      resetMessage = 'All presenters had been selected. Starting a new round!';
+      
+      // Reset all presenters to NOT_SELECTED status
+      data = data.map(person => ({
+        ...person,
+        presentationStatus: PRESENTATION_STATUS.NOT_SELECTED,
+      }));
+      
+      // Update remaining list after reset
+      remaining = data.filter(person => person.presentationStatus === PRESENTATION_STATUS.NOT_SELECTED);
+      
+      console.log(`Auto-reset triggered: Reset ${data.length} presenters to start new round`);
+    }
 
+    // Randomly select next presenter from remaining
+    const randomIndex = Math.floor(Math.random() * remaining.length);
+    const selectedPresenter = remaining[randomIndex];
+    selectedPresenter.presentationStatus = PRESENTATION_STATUS.ASSIGNED;
+
+    // Save updated data to blob storage
+    const updatedData = JSON.stringify(data);
+    const uploadBlobResponse = await blockBlobClient.upload(updatedData, updatedData.length);
+    
+    console.log(`Presenter "${selectedPresenter.name}" selected successfully. requestId: ${uploadBlobResponse.requestId}`);
+
+    // Prepare response message
+    let message = `Presenter "${selectedPresenter.name}" has been selected`;
+    if (autoResetOccurred) {
+      message = `${resetMessage} ${selectedPresenter.name} has been selected for the new round`;
+    }
+
+    // Return success response with consistent format
     context.res = {
       status: 200,
       body: {
-        presenters: JSON.parse(newList),
-      },
+        presenters: data,
+        success: true,
+        message: message,
+        selectedPresenter: selectedPresenter,
+        autoResetOccurred: autoResetOccurred,
+        remainingCount: remaining.length - 1 // Subtract 1 because we just selected one
+      }
     };
+
   } catch (error) {
+    console.error('Error selecting next presenter:', error);
+    
     context.res = {
       status: 500,
       body: {
-        error: JSON.stringify(error),
-      },
+        success: false,
+        message: 'An error occurred while selecting the next presenter',
+        error: error.message || 'Internal server error'
+      }
     };
   }
 }
