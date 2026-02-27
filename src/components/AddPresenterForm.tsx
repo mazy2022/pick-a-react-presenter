@@ -8,11 +8,11 @@ const AddPresenterForm: React.FC<AddPresenterFormProps> = ({
   existingNames
 }) => {
   const [name, setName] = useState('');
+  const [avatar, setAvatar] = useState<string | undefined>(undefined);
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    // Focus the input when the form is mounted
     if (inputRef.current) {
       inputRef.current.focus();
     }
@@ -32,24 +32,39 @@ const AddPresenterForm: React.FC<AddPresenterFormProps> = ({
     e.preventDefault();
     const trimmedName = name.trim();
     const validationError = validateName(trimmedName);
-    
+
     if (validationError) {
       setError(validationError);
       return;
     }
 
     setError(null);
-    onSubmit(trimmedName);
+    onSubmit(trimmedName, avatar);
   };
 
   const handleNameChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setName(value);
-    
-    // Clear error when user starts typing
+
     if (error) {
       setError(null);
     }
+  };
+
+  const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setAvatar(undefined);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        setAvatar(reader.result);
+      }
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -74,7 +89,7 @@ const AddPresenterForm: React.FC<AddPresenterFormProps> = ({
               onKeyDown={handleKeyDown}
               disabled={isLoading}
               placeholder="Enter presenter name"
-              aria-describedby={error ? "name-error" : undefined}
+              aria-describedby={error ? 'name-error' : undefined}
             />
             {error && (
               <div id="name-error" className="error-text" role="alert">
@@ -82,7 +97,18 @@ const AddPresenterForm: React.FC<AddPresenterFormProps> = ({
               </div>
             )}
           </div>
-          
+
+          <div className="form-group">
+            <label htmlFor="presenter-avatar">Avatar:</label>
+            <input
+              id="presenter-avatar"
+              type="file"
+              accept="image/*"
+              onChange={handleAvatarChange}
+              disabled={isLoading}
+            />
+          </div>
+
           <div className="form-actions">
             <button
               type="submit"
