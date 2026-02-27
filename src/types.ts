@@ -7,6 +7,7 @@ export enum PresentationStatus {
 export interface Presenter {
   name: string;
   presentationStatus: PresentationStatus;
+  avatar?: string;
 }
 
 export interface ApiResponse<T = any> {
@@ -33,7 +34,7 @@ export interface NotificationProps {
 }
 
 export interface AddPresenterFormProps {
-  onSubmit: (name: string) => void;
+  onSubmit: (name: string, avatar?: string) => void;
   onCancel: () => void;
   isLoading: boolean;
   existingNames: string[];

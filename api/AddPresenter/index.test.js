@@ -119,6 +119,18 @@ describe('AddPresenter Function', () => {
     });
   });
 
+  describe('Avatar Validation', () => {
+    test('should return 400 when avatar is not a valid data URL', async () => {
+      const req = { body: { name: 'John Doe', avatar: 'not-an-image' } };
+
+      await addPresenterFunction(context, req);
+
+      expect(context.res.status).toBe(400);
+      expect(context.res.body.success).toBe(false);
+      expect(context.res.body.message).toBe('Avatar must be a valid image data URL');
+    });
+  });
+
   describe('Duplicate Name Validation', () => {
     test('should return 400 when presenter name already exists (case insensitive)', async () => {
       const existingPresenters = [
@@ -157,7 +169,8 @@ describe('AddPresenter Function', () => {
         name: 'John Doe',
         presentationStatus: 0,
         id: 'test-uuid-123',
-        addedDate: expect.any(String)
+        addedDate: expect.any(String),
+        avatar: undefined
       });
     });
 
@@ -191,6 +204,16 @@ describe('AddPresenter Function', () => {
       
       expect(context.res.status).toBe(200);
       expect(context.res.body.presenters[0].name).toBe('John Doe');
+    });
+
+
+    test('should persist avatar when provided', async () => {
+      const req = { body: { name: 'John Doe', avatar: 'data:image/png;base64,abc123' } };
+
+      await addPresenterFunction(context, req);
+
+      expect(context.res.status).toBe(200);
+      expect(context.res.body.presenters[0].avatar).toBe('data:image/png;base64,abc123');
     });
 
     test('should call blob storage operations correctly', async () => {

@@ -98,7 +98,7 @@ describe('AddPresenterForm Component', () => {
     const submitButton = screen.getByRole('button', { name: 'Add Presenter' });
     await user.click(submitButton);
 
-    expect(mockOnSubmit).toHaveBeenCalledWith('New Person');
+    expect(mockOnSubmit).toHaveBeenCalledWith('New Person', undefined);
   });
 
   it('trims whitespace from name before submission', async () => {
@@ -111,7 +111,7 @@ describe('AddPresenterForm Component', () => {
     const submitButton = screen.getByRole('button', { name: 'Add Presenter' });
     await user.click(submitButton);
 
-    expect(mockOnSubmit).toHaveBeenCalledWith('New Person');
+    expect(mockOnSubmit).toHaveBeenCalledWith('New Person', undefined);
   });
 
   it('calls onCancel when cancel button is clicked', async () => {
@@ -193,6 +193,6 @@ describe('AddPresenterForm Component', () => {
     const nameInput = screen.getByLabelText('Name:');
     await user.type(nameInput, 'New Person{Enter}');
 
-    expect(mockOnSubmit).toHaveBeenCalledWith('New Person');
+    expect(mockOnSubmit).toHaveBeenCalledWith('New Person', undefined);
   });
 });

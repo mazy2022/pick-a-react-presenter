@@ -54,7 +54,7 @@ function App() {
 
   const selectPresenter = useCallback(() => {
     if (isSelecting) return;
-    
+
     setIsSelecting(true);
     fetch('api/SelectNextPresenter')
       .then(res => res.json())
@@ -77,14 +77,13 @@ function App() {
         });
       })
       .finally(() => {
-        // Debounce for 2 seconds
         setTimeout(() => {
           setIsSelecting(false);
         }, 2000);
       });
   }, [isSelecting, addNotification]);
 
-  const addPresenter = useCallback(async (name: string) => {
+  const addPresenter = useCallback(async (name: string, avatar?: string) => {
     setIsLoading(true);
     try {
       const response = await fetch('api/AddPresenter', {
@@ -92,11 +91,11 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name }),
+        body: JSON.stringify({ name, avatar }),
       });
-      
+
       const body: ApiResponse = await response.json();
-      
+
       if (response.ok && body.presenters) {
         setPresenters(body.presenters);
         setShowAddForm(false);
@@ -125,15 +124,15 @@ function App() {
       setRemovingPresenter(name);
       try {
         const response = await fetch('api/RemovePresenter', {
-          method: 'POST',
+          method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({ name }),
         });
-        
+
         const body: ApiResponse = await response.json();
-        
+
         if (response.ok && body.presenters) {
           setPresenters(body.presenters);
           addNotification({
@@ -164,9 +163,9 @@ function App() {
         const response = await fetch('api/ResetPresenters', {
           method: 'POST',
         });
-        
+
         const body: ApiResponse = await response.json();
-        
+
         if (response.ok && body.presenters) {
           setPresenters(body.presenters);
           addNotification({
@@ -195,25 +194,25 @@ function App() {
       <div className="wrapper">
         <div className="content">
           <h1 className="header">Pick a Presenter</h1>
-          
+
           <div className="button-group">
-            <button 
+            <button
               className="pick-button"
               onClick={selectPresenter}
               disabled={isSelecting || isLoading}
             >
               {isSelecting ? 'Selecting...' : `Pick a New ${buttonWords[buttonWordIndex]}`}
             </button>
-            
-            <button 
+
+            <button
               className="add-button"
               onClick={() => setShowAddForm(true)}
               disabled={isLoading}
             >
               Add Presenter
             </button>
-            
-            <button 
+
+            <button
               className="reset-button"
               onClick={resetPresenters}
               disabled={isLoading}
@@ -244,7 +243,7 @@ function App() {
                   presented: presenter.presentationStatus === PresentationStatus.PRESENTED,
                   assigned: presenter.presentationStatus === PresentationStatus.ASSIGNED,
                 })}>
-                  <img alt="person" src={guy} />
+                  <img alt={`${presenter.name} avatar`} src={presenter.avatar || guy} />
                   <span>{presenter.name}</span>
                   <button
                     className="remove-button"
@@ -266,7 +265,7 @@ function App() {
           )}
         </div>
       </div>
-      
+
       <NotificationSystem
         notifications={notifications}
         onRemove={removeNotification}
