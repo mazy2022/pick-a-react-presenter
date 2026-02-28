@@ -135,7 +135,7 @@ function App() {
       setRemovingPresenter(name);
       try {
         const response = await fetch('api/RemovePresenter', {
-          method: 'POST',
+          method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
           },

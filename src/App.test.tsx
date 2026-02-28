@@ -241,7 +241,7 @@ describe('App Component', () => {
 
     expect(window.confirm).toHaveBeenCalledWith('Are you sure you want to remove John Doe?');
     expect(mockFetch).toHaveBeenCalledWith('api/RemovePresenter', {
-      method: 'POST',
+      method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: 'John Doe' }),
     });
