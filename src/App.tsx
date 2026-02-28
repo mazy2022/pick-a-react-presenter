@@ -22,6 +22,7 @@ const parseApiResponse = async (response: Response): Promise<ApiResponse> => {
 
 function App() {
   const [presenters, setPresenters] = useState<Presenter[]>([]);
+  const [avatarUrls, setAvatarUrls] = useState<Record<string, string>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
   const [isSelecting, setIsSelecting] = useState<boolean>(false);
@@ -29,6 +30,7 @@ function App() {
 
   const [notifications, setNotifications] = useState<NotificationProps[]>([]);
   const [removingPresenter, setRemovingPresenter] = useState<string | null>(null);
+  const fileInputRefs = React.useRef<Record<string, HTMLInputElement | null>>({});
 
   const addNotification = useCallback((notification: Omit<NotificationProps, 'id'>) => {
     const id = Date.now().toString();
@@ -61,6 +63,37 @@ function App() {
         setIsLoading(false);
       });
   }, [addNotification]);
+
+  useEffect(() => {
+    setAvatarUrls(prev => {
+      const activeNames = new Set(presenters.map(presenter => presenter.name));
+      const staleNames = Object.keys(prev).filter(name => !activeNames.has(name));
+
+      if (staleNames.length === 0) {
+        return prev;
+      }
+
+      const next = { ...prev };
+      staleNames.forEach(name => {
+        if (next[name].startsWith('blob:')) {
+          URL.revokeObjectURL(next[name]);
+        }
+        delete next[name];
+      });
+
+      return next;
+    });
+  }, [presenters]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(avatarUrls).forEach(url => {
+        if (url.startsWith('blob:')) {
+          URL.revokeObjectURL(url);
+        }
+      });
+    };
+  }, [avatarUrls]);
 
   const selectPresenter = useCallback(() => {
     if (isSelecting) return;
@@ -204,6 +237,42 @@ function App() {
     }
   }, [addNotification]);
 
+  const openAvatarPicker = useCallback((name: string) => {
+    fileInputRefs.current[name]?.click();
+  }, []);
+
+  const updateAvatar = useCallback((name: string, file?: File) => {
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.startsWith('image/')) {
+      addNotification({
+        type: 'error',
+        message: 'Please choose a valid image file for your avatar.'
+      });
+      return;
+    }
+
+    const newUrl = URL.createObjectURL(file);
+    setAvatarUrls(prev => {
+      const currentUrl = prev[name];
+      if (currentUrl?.startsWith('blob:')) {
+        URL.revokeObjectURL(currentUrl);
+      }
+
+      return {
+        ...prev,
+        [name]: newUrl,
+      };
+    });
+
+    addNotification({
+      type: 'success',
+      message: `${name}'s avatar has been updated.`
+    });
+  }, [addNotification]);
+
   return (
     <div className="App">
       <div className="wrapper">
@@ -258,7 +327,28 @@ function App() {
                   presented: presenter.presentationStatus === PresentationStatus.PRESENTED,
                   assigned: presenter.presentationStatus === PresentationStatus.ASSIGNED,
                 })}>
-                  <img alt="person" src={guy} />
+                  <button
+                    type="button"
+                    className="avatar-button"
+                    onClick={() => openAvatarPicker(presenter.name)}
+                    disabled={isLoading}
+                    aria-label={`Change avatar for ${presenter.name}`}
+                    title={`Change avatar for ${presenter.name}`}
+                  >
+                    <img alt={`${presenter.name} avatar`} src={avatarUrls[presenter.name] || guy} />
+                  </button>
+                  <input
+                    ref={element => {
+                      fileInputRefs.current[presenter.name] = element;
+                    }}
+                    className="avatar-input"
+                    type="file"
+                    accept="image/*"
+                    onChange={e => {
+                      updateAvatar(presenter.name, e.target.files?.[0]);
+                      e.target.value = '';
+                    }}
+                  />
                   <span>{presenter.name}</span>
                   <button
                     className="remove-button"
