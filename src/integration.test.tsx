@@ -193,7 +193,7 @@ describe('Integration Tests - Complete User Workflows', () => {
 
       // Step 3: Verify API call
       expect(mockFetch).toHaveBeenCalledWith('api/RemovePresenter', {
-        method: 'POST',
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: 'Alice Johnson' }),
       });
