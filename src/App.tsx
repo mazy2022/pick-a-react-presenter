@@ -10,6 +10,16 @@ import { NotificationProps } from './types';
 const buttonWords = ['Victim', 'Presenter', 'Gocian', 'TED Talker'];
 const buttonWordIndex = Math.floor(Math.random() * buttonWords.length);
 
+const parseApiResponse = async (response: Response): Promise<ApiResponse> => {
+  const rawBody = await response.text();
+
+  if (!rawBody) {
+    return {};
+  }
+
+  return JSON.parse(rawBody) as ApiResponse;
+};
+
 function App() {
   const [presenters, setPresenters] = useState<Presenter[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -32,7 +42,7 @@ function App() {
   useEffect(() => {
     setIsLoading(true);
     fetch('api/GetPresenters')
-      .then(res => res.json())
+      .then(parseApiResponse)
       .then((body: ApiResponse) => {
         if (body.presenters) {
           setPresenters(body.presenters);
@@ -57,7 +67,7 @@ function App() {
     
     setIsSelecting(true);
     fetch('api/SelectNextPresenter')
-      .then(res => res.json())
+      .then(parseApiResponse)
       .then((body: ApiResponse) => {
         if (body.presenters) {
           setPresenters(body.presenters);
@@ -95,7 +105,7 @@ function App() {
         body: JSON.stringify({ name }),
       });
       
-      const body: ApiResponse = await response.json();
+      const body = await parseApiResponse(response);
       
       if (response.ok && body.presenters) {
         setPresenters(body.presenters);
@@ -132,10 +142,14 @@ function App() {
           body: JSON.stringify({ name }),
         });
         
-        const body: ApiResponse = await response.json();
-        
-        if (response.ok && body.presenters) {
-          setPresenters(body.presenters);
+        const body = await parseApiResponse(response);
+
+        if (response.ok) {
+          if (body.presenters) {
+            setPresenters(body.presenters);
+          } else {
+            setPresenters(prev => prev.filter(presenter => presenter.name !== name));
+          }
           addNotification({
             type: 'success',
             message: `${name} removed successfully!`
@@ -165,7 +179,7 @@ function App() {
           method: 'POST',
         });
         
-        const body: ApiResponse = await response.json();
+        const body = await parseApiResponse(response);
         
         if (response.ok && body.presenters) {
           setPresenters(body.presenters);
